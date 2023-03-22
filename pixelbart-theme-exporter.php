@@ -3,7 +3,7 @@
 Plugin Name: Pixelbart Theme Exporter
 Plugin URI: https://pixelbart.de
 Description: This plugin allows you to export the currently active WordPress theme as a ZIP file and optionally update the version number in its style.css file. It adds a tool to the WordPress admin area under Tools.
-Version: 1.0.0
+Version: 2.0.0
 Tested up to: WordPress 6.1.1
 Requires at least: WordPress 4.0
 Author: Pixelbart
@@ -12,6 +12,10 @@ License: MIT License
 License URI: https://opensource.org/licenses/MIT
 Text Domain: pixelbart-theme-exporter
 */
+
+defined('ABSPATH') or exit;
+
+define('PIXELBART_THEME_EXPORTER_PATH', plugin_dir_path( __FILE__ ));
 
 /**
  * This function adds a new submenu page to the WordPress admin area under "Tools", using the
@@ -26,7 +30,6 @@ add_action('admin_menu', function () {
     $name = esc_html__('Theme Exporter', 'pixelbart-theme-exporter');
     add_submenu_page('tools.php', $name, $name, 'manage_options', 'pxbt-theme-exporter', 'pxbt_exporter_adminpage');
 });
-
 
 /**
  * Retrieve the version number of the active WordPress theme.
@@ -81,71 +84,160 @@ function pxbt_exporter_next_theme_version($version)
 }
 
 /**
- * This function exports the currently active WordPress theme as a ZIP file and optionally updates
- * the version number in its style.css file, based on user input. It first creates a temporary directory
- * to copy the theme files to, applies the requested version number to the style.css file, compresses
- * the files into a ZIP archive, and finally generates a download link to the user. The function also
- * includes input validation and security checks, such as verifying a nonce and sanitizing user input.
+ * Exports a WordPress theme with the specified name and version to a ZIP archive.
+ *
+ * @param string $theme_name    The name of the theme to export.
+ * @param string $theme_version The version of the theme to export.
+ *
+ * @return void
  */
-function pxbt_exporter_adminpage()
+function pxbt_export_theme(string $theme_name, string $theme_version)
 {
-    $theme_dir = get_stylesheet_directory();
-    $theme_name = get_stylesheet();
+    $theme_dir = get_theme_root() . '/' . $theme_name;
     $temp_theme_dir = plugin_dir_path(__FILE__) . 'temp_theme/' . $theme_name;
     $temp_zip_dir = plugin_dir_path(__FILE__) . 'temp_zip/';
 
+    if (!file_exists($temp_theme_dir)) {
+        mkdir($temp_theme_dir, 0755, true);
+    } elseif (!is_writable($temp_theme_dir)) {
+        chmod($temp_theme_dir, 0755);
+    }
+
+    pxbt_exporter_recursive_remove_directory($temp_theme_dir);
+    pxbt_exporter_recursive_copy($theme_dir, $temp_theme_dir);
+
+    $style_css = file_get_contents($temp_theme_dir . '/style.css');
+    $style_css = preg_replace('/(Version:\s*)[0-9]+(\.[0-9]+){0,3}/', '${1}' . $theme_version, $style_css);
+
+    file_put_contents($temp_theme_dir . '/style.css', $style_css);
+
+    if (!file_exists($temp_zip_dir)) {
+        mkdir($temp_zip_dir, 0755, true);
+    } elseif (!is_writable($temp_zip_dir)) {
+        chmod($temp_zip_dir, 0755);
+    }
+
+    $zip_filename = $temp_zip_dir . $theme_name . '.zip';
+
+    unlink($zip_filename);
+
+    $zip = new ZipArchive();
+    $zip->open($zip_filename, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+
+    $files = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($temp_theme_dir),
+        RecursiveIteratorIterator::LEAVES_ONLY
+    );
+
+    foreach ($files as $name => $file) {
+        if (!$file->isDir()) {
+            $filePath = $file->getRealPath();
+            $relativePath = substr($filePath, strlen($temp_theme_dir) + 1);
+            $zip->addFile($filePath, $relativePath);
+        }
+    }
+
+    $zip->close();
+
+    $download_url = plugins_url('temp_zip/' . $theme_name . '.zip', __FILE__);
+    $message = __('The current WordPress theme has been exported as %s and can be downloaded here: <a href="%s" target="_blank" data-download>Download archiv</a>.', 'pixelbart-theme-exporter');
+    $message = sprintf($message, esc_html(basename($zip_filename)), esc_url($download_url));
+
+    echo '<div class="notice notice-success is-dismissible"><p>';
+    echo $message;
+    echo '</p></div>';
+}
+
+/**
+ * Exports a WordPress plugin to a ZIP file with the specified version number.
+ *
+ * @param string $plugin_file The file path relative to the plugins directory of the plugin to export.
+ * @param string $plugin_version The new version number to use in the plugin header.
+ *
+ * @return void
+ */
+function pxbt_export_plugin(string $plugin_file, string $plugin_version)
+{
+    $plugin_dir = WP_PLUGIN_DIR . '/' . dirname($plugin_file);
+    $temp_plugin_dir = plugin_dir_path(__FILE__) . 'temp_plugin/' . dirname($plugin_file);
+    $temp_zip_dir = plugin_dir_path(__FILE__) . 'temp_zip/';
+
+    if (!file_exists($temp_plugin_dir)) {
+        mkdir($temp_plugin_dir, 0755, true);
+    } elseif (!is_writable($temp_plugin_dir)) {
+        chmod($temp_plugin_dir, 0755);
+    }
+
+    pxbt_exporter_recursive_remove_directory($temp_plugin_dir);
+    pxbt_exporter_recursive_copy($plugin_dir, $temp_plugin_dir);
+
+    $plugin_file_path = $temp_plugin_dir . '/' . basename($plugin_file);
+    $plugin_php = file_get_contents($plugin_file_path);
+
+    // Use a regular expression to find and replace the version number
+    $plugin_php = preg_replace('/^(\s*\*?\s*Version:\s+)[0-9.]+/m', '${1}' . $plugin_version, $plugin_php);
+
+    file_put_contents($plugin_file_path, $plugin_php);
+
+    if (!file_exists($temp_zip_dir)) {
+        mkdir($temp_zip_dir, 0755, true);
+    } elseif (!is_writable($temp_zip_dir)) {
+        chmod($temp_zip_dir, 0755);
+    }
+
+    $zip_filename = $temp_zip_dir . basename($plugin_file, '.php') . '.zip';
+
+    unlink($zip_filename);
+
+    $zip = new ZipArchive();
+    $zip->open($zip_filename, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+
+    $files = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($temp_plugin_dir),
+        RecursiveIteratorIterator::LEAVES_ONLY
+    );
+
+    foreach ($files as $name => $file) {
+        if (!$file->isDir()) {
+            $filePath = $file->getRealPath();
+            $relativePath = substr($filePath, strlen($temp_plugin_dir) + 1);
+            $zip->addFile($filePath, $relativePath);
+        }
+    }
+
+    $zip->close();
+
+    $download_url = plugins_url('temp_zip/' . basename($plugin_file, '.php') . '.zip', __FILE__);
+    $message = __('The current WordPress plugin has been exported as %s and can be downloaded here: <a href="%s" target="_blank" data-download>Download archive</a>.', 'pixelbart-plugin-exporter');
+    $message = sprintf($message, esc_html(basename($zip_filename)), esc_url($download_url));
+
+    echo '<div class="notice notice-success is-dismissible"><p>';
+    echo $message;
+    echo '</p></div>';
+}
+
+/**
+ * Renders the exporter admin page.
+ * If nonce is verified, handles form submissions by calling the corresponding
+ * export function based on the selected action.
+ * 
+ * @return void
+ */
+function pxbt_exporter_adminpage()
+{
     if (isset($_POST['_wpnonce']) && wp_verify_nonce($_POST['_wpnonce'], 'pixelbart-theme-exporter-nonce')) {
-        $theme_version = sanitize_text_field($_POST['version']);
-
-        if (!file_exists($temp_theme_dir)) {
-            mkdir($temp_theme_dir, 0755, true);
-        } elseif (!is_writable($temp_theme_dir)) {
-            chmod($temp_theme_dir, 0755);
+        $version = sanitize_text_field($_POST['version']);
+        $action = (isset($_POST['action'])) ? $_POST['action'] : 'export_theme';
+        $id = (isset($_POST['id'])) ? $_POST['id'] : null;
+    
+        switch ($action) {
+            case 'export_theme':
+                pxbt_export_theme($id, $version);
+                break;
+            case 'export_plugin':
+                pxbt_export_plugin($id, $version);
+                break;
         }
-
-        pxbt_exporter_recursive_remove_directory($temp_theme_dir);
-        pxbt_exporter_recursive_copy($theme_dir, $temp_theme_dir);
-
-        $style_css = file_get_contents($temp_theme_dir . '/style.css');
-        $style_css = preg_replace('/(Version:\s*)[0-9]+(\.[0-9]+){0,3}/', '${1}' . $theme_version, $style_css);
-
-        file_put_contents($temp_theme_dir . '/style.css', $style_css);
-
-        if (!file_exists($temp_zip_dir)) {
-            mkdir($temp_zip_dir, 0755, true);
-        } elseif (!is_writable($temp_zip_dir)) {
-            chmod($temp_zip_dir, 0755);
-        }
-
-        $zip_filename = $temp_zip_dir . $theme_name . '.zip';
-
-        unlink($zip_filename);
-
-        $zip = new ZipArchive();
-        $zip->open($zip_filename, ZipArchive::CREATE | ZipArchive::OVERWRITE);
-
-        $files = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($temp_theme_dir),
-            RecursiveIteratorIterator::LEAVES_ONLY
-        );
-
-        foreach ($files as $name => $file) {
-            if (!$file->isDir()) {
-                $filePath = $file->getRealPath();
-                $relativePath = substr($filePath, strlen($temp_theme_dir) + 1);
-                $zip->addFile($filePath, $relativePath);
-            }
-        }
-
-        $zip->close();
-
-        $download_url = plugins_url('temp_zip/' . $theme_name . '.zip', __FILE__);
-        $message = __('The current WordPress theme has been exported as %s and can be downloaded here: <a href="%s" target="_blank">Download archiv</a>.', 'pixelbart-theme-exporter');
-        $message = sprintf($message, esc_html(basename($zip_filename)), esc_url($download_url));
-
-        echo '<div class="notice notice-success is-dismissible"><p>';
-        echo $message;
-        echo '</p></div>';
     }
        
     pxbt_exporter_the_form();
@@ -159,22 +251,7 @@ function pxbt_exporter_adminpage()
  */
 function pxbt_exporter_the_form()
 {
-    $current_version = pxbt_exporter_theme_version();
-
-?>
-    <div class="wrap">
-        <h1><?php echo esc_html__('Pixelbart Theme Exporter', 'pixelbart-theme-exporter'); ?></h1>
-        <form method="post">
-            <?php wp_nonce_field('pixelbart-theme-exporter-nonce'); ?>
-            <p>
-                <label for="version"><?php echo esc_html__('New version:', 'pixelbart-theme-exporter'); ?></label>
-                <input type="text" name="version" id="version" value="<?= esc_html(pxbt_exporter_next_theme_version($current_version)) ?>" />
-            <div class="description"><?php printf(esc_html__('Current version: %s', 'pixelbart-theme-exporter'), $current_version); ?></div>
-            </p>
-            <p><input type="submit" value="<?php echo esc_html__('Export', 'pixelbart-theme-exporter'); ?>" class="button-primary" /></p>
-        </form>
-    </div>
-<?php
+    include PIXELBART_THEME_EXPORTER_PATH . 'templates/index.php';
 }
 
 /**
@@ -194,7 +271,7 @@ function pxbt_exporter_recursive_copy($src, $dst)
     @mkdir($dst);
 
     while (($file = readdir($dir)) !== false) {
-        if ($file != '.' && $file != '..') {
+        if ($file != '.' && $file != '..' && $file != 'temp_plugin') { // Exclude the temporary plugin directory
             if (is_dir($src . '/' . $file)) {
                 pxbt_exporter_recursive_copy($src . '/' . $file, $dst . '/' . $file);
             } else {
@@ -205,6 +282,7 @@ function pxbt_exporter_recursive_copy($src, $dst)
 
     closedir($dir);
 }
+
 
 /**
  * This function recursively removes a directory and all its contents, including all subdirectories
