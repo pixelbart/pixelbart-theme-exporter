@@ -3,7 +3,7 @@
 Plugin Name: Pixelbart Theme Exporter
 Plugin URI: https://pixelbart.de
 Description: This plugin allows you to export the currently active WordPress theme as a ZIP file and optionally update the version number in its style.css file. It adds a tool to the WordPress admin area under Tools.
-Version: 2.0.0
+Version: 2.2.0
 Tested up to: WordPress 6.1.1
 Requires at least: WordPress 4.0
 Author: Pixelbart
@@ -119,7 +119,9 @@ function pxbt_export_theme(string $theme_name, string $theme_version)
 
     $zip_filename = $temp_zip_dir . $theme_name . '.zip';
 
-    unlink($zip_filename);
+    if (file_exists($zip_filename)) {
+        unlink($zip_filename);
+    }
 
     $zip = new ZipArchive();
     $zip->open($zip_filename, ZipArchive::CREATE | ZipArchive::OVERWRITE);
@@ -187,7 +189,9 @@ function pxbt_export_plugin(string $plugin_file, string $plugin_version)
 
     $zip_filename = $temp_zip_dir . basename($plugin_file, '.php') . '.zip';
 
-    unlink($zip_filename);
+    if (file_exists($zip_filename)) {
+        unlink($zip_filename);
+    }
 
     $zip = new ZipArchive();
     $zip->open($zip_filename, ZipArchive::CREATE | ZipArchive::OVERWRITE);
@@ -271,7 +275,7 @@ function pxbt_exporter_recursive_copy($src, $dst)
     @mkdir($dst);
 
     while (($file = readdir($dir)) !== false) {
-        if ($file != '.' && $file != '..' && $file != 'temp_plugin') { // Exclude the temporary plugin directory
+        if ($file != '.' && $file != '..' && $file != 'temp_plugin' && $file != 'temp_theme') { // Exclude the temporary plugin directory
             if (is_dir($src . '/' . $file)) {
                 pxbt_exporter_recursive_copy($src . '/' . $file, $dst . '/' . $file);
             } else {
