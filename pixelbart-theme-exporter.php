@@ -3,7 +3,7 @@
 Plugin Name: Pixelbart Theme Exporter
 Plugin URI: https://pixelbart.de
 Description: This plugin allows you to export the currently active WordPress theme as a ZIP file and optionally update the version number in its style.css file. It adds a tool to the WordPress admin area under Tools.
-Version: 2.2.0
+Version: 2.3.0
 Tested up to: WordPress 6.1.1
 Requires at least: WordPress 4.0
 Author: Pixelbart
