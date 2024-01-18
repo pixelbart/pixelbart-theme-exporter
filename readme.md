@@ -31,7 +31,7 @@ If you encounter any issues or have any suggestions for improvement, please subm
 
 - Plugin author: Pixelbart
 - Plugin author URL: https://pixelbart.de/
-- Plugin version: 2.0.0
+- Plugin version: 2.4.0
 - Tested up to: WordPress 6.1.1
 - Requires at least: WordPress 4.0
 
