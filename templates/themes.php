@@ -3,6 +3,7 @@
 defined('ABSPATH') or exit;
 
 $themes = wp_get_themes();
+$defaultVersion = sprintf('%d.%d.%d.%d', 2, date('Y'), date('W'), 1);
 ?>
 <form method="post">
     <?php wp_nonce_field('pixelbart-theme-exporter-nonce'); ?>
@@ -19,7 +20,7 @@ $themes = wp_get_themes();
 
     <p>
         <label for="version"><?php echo esc_html__('New version:', 'pixelbart-theme-exporter'); ?></label>
-        <input type="text" name="version" id="version" value="" required>
+        <input type="text" name="version" id="version" value="<?=$_POST['version'] ?? $defaultVersion?>" required>
     </p>
 
     <p>
