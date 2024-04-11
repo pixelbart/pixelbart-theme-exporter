@@ -31,11 +31,12 @@ If you encounter any issues or have any suggestions for improvement, please subm
 
 - Plugin author: Pixelbart
 - Plugin author URL: https://pixelbart.de/
-- Plugin version: 2.4.0
+- Plugin version: 2.4.1
 - Tested up to: WordPress 6.1.1
 - Requires at least: WordPress 4.0
 
 ## Changelog
 
+- 2.4.1 Set default version on WordPress Themes.
 - 2.0.0 The export of both themes and plugins is now possible.
 - 1.0.0 Initial release.
